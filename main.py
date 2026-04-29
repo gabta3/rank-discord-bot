@@ -253,19 +253,23 @@ def build_embed(sorted_data: list, mode: str) -> disnake.Embed:
     for i, p in enumerate(sorted_data[:10]):
         prefix = MEDALS[i] if i < 3 else f"**{i+1}.**"
         col_players += f"{prefix} {p['name']}\n"
-        col_lol     += f"{p['l_emoji']} `{p['l_display']}`\n"
-        col_valo    += f"{p['v_emoji']} `{p['v_display']}`\n"
+        col_lol     += f"{p['l_emoji']}  {p['l_display']}\n"
+        col_valo    += f"{p['v_emoji']}  {p['v_display']}\n"
+
+    SPACER = "\u200b"
 
     if mode == "global":
-        embed.add_field(name="Joueurs",                   value=col_players or "—", inline=True)
-        embed.add_field(name="⚔️ LoL",                    value=col_lol     or "—", inline=True)
-        embed.add_field(name="🔺 Valorant",               value=col_valo    or "—", inline=True)
+        embed.add_field(name="Joueurs",           value=col_players or "—", inline=True)
+        embed.add_field(name="\u2694\ufe0f  LoL",   value=col_lol     or "—", inline=True)
+        embed.add_field(name="\U0001f53a  Valorant", value=col_valo    or "—", inline=True)
     elif mode == "lol":
-        embed.add_field(name="Joueurs",                   value=col_players or "—", inline=True)
-        embed.add_field(name="⚔️ Rang (Solo/Duo only)",   value=col_lol     or "—", inline=True)
+        embed.add_field(name="Joueurs",           value=col_players or "—", inline=True)
+        embed.add_field(name=SPACER,              value=SPACER,              inline=True)
+        embed.add_field(name="\u2694\ufe0f  Rang LoL", value=col_lol  or "—", inline=True)
     else:
-        embed.add_field(name="Joueurs",                   value=col_players or "—", inline=True)
-        embed.add_field(name="🔺 Rang Valorant",          value=col_valo    or "—", inline=True)
+        embed.add_field(name="Joueurs",           value=col_players or "—", inline=True)
+        embed.add_field(name=SPACER,              value=SPACER,              inline=True)
+        embed.add_field(name="\U0001f53a  Rang Valorant", value=col_valo or "—", inline=True)
 
     return embed
 
@@ -348,11 +352,28 @@ async def before_refresh():
 # EVENTS & SLASH COMMANDS
 # ─────────────────────────────────────────
 
+def check_riot_key():
+    """Teste la clé Riot au démarrage et affiche un diagnostic clair."""
+    r = requests.get(
+        f"https://europe.api.riotgames.com/riot/account/v1/accounts/by-riot-id/test/test?api_key={RIOT_TOKEN}",
+        timeout=8
+    )
+    if r.status_code == 403:
+        print("❌ RIOT_TOKEN → 403 Forbidden : clé expirée ou invalide. Renouvelle-la sur https://developer.riotgames.com")
+    elif r.status_code == 401:
+        print("❌ RIOT_TOKEN → 401 Unauthorized : clé manquante ou mal copiée dans Railway.")
+    elif r.status_code in (200, 404):
+        # 404 = joueur 'test' introuvable mais la clé est valide
+        print("✅ RIOT_TOKEN valide.")
+    else:
+        print(f"⚠️  RIOT_TOKEN → HTTP {r.status_code}: {r.text[:150]}")
+
 @bot.event
 async def on_ready():
     print(f"✅ Bot connecté : {bot.user}")
     if not HENRIK_TOKEN:
         print("⚠️  HENRIK_TOKEN manquant → Valorant sera Unranked !")
+    check_riot_key()
     await refresh_leaderboard()
     auto_refresh.start()
 
