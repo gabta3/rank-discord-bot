@@ -33,20 +33,34 @@ def get_valo_data(name, tag):
     return {"rank": "Unranked", "icon_url": None}
 
 def get_lol_data(name, tag):
-    acc_url = f"https://europe.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{name}/{tag}?api_key={RIOT_TOKEN}"
-    r = requests.get(acc_url)
-    if r.status_code != 200: return {"rank": "Unranked", "icon_url": None}
-    puuid = r.json()['puuid']
-    sum_url = f"https://euw1.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{puuid}?api_key={RIOT_TOKEN}"
-    r_sum = requests.get(sum_url).json()
-    league_url = f"https://euw1.api.riotgames.com/lol/league/v4/entries/by-summoner/{r_sum['id']}?api_key={RIOT_TOKEN}"
-    leagues = requests.get(league_url).json()
-    for l in leagues:
-        if l['queueType'] == 'RANKED_SOLO_5x5':
-            tier = l['tier'].capitalize()
-            icon_url = f"https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-static-assets/global/default/images/ranked-emblems/emblem-{tier.lower()}.png"
-            return {"rank": f"{tier} {l['rank']}", "icon_url": icon_url}
-    return {"rank": "Unranked", "icon_url": None}
+    try:
+        acc_url = f"https://europe.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{name}/{tag}?api_key={RIOT_TOKEN}"
+        r = requests.get(acc_url)
+        if r.status_code != 200: 
+            print(f"⚠️ LoL: Joueur {name}#{tag} introuvable (Code {r.status_code})")
+            return {"rank": "Non trouvé", "icon_url": None}
+        
+        puuid = r.json().get('puuid')
+        if not puuid: return {"rank": "Erreur ID", "icon_url": None}
+
+        sum_url = f"https://euw1.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{puuid}?api_key={RIOT_TOKEN}"
+        r_sum = requests.get(sum_url)
+        if r_sum.status_code != 200: return {"rank": "Unranked", "icon_url": None}
+        sum_data = r_sum.json()
+        
+        league_url = f"https://euw1.api.riotgames.com/lol/league/v4/entries/by-summoner/{sum_data['id']}?api_key={RIOT_TOKEN}"
+        leagues = requests.get(league_url).json()
+        
+        for l in leagues:
+            if l['queueType'] == 'RANKED_SOLO_5x5':
+                tier = l['tier'].capitalize()
+                icon_url = f"https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-static-assets/global/default/images/ranked-emblems/emblem-{tier.lower()}.png"
+                return {"rank": f"{tier} {l['rank']}", "icon_url": icon_url}
+        
+        return {"rank": "Unranked", "icon_url": None}
+    except Exception as e:
+        print(f"❌ Erreur LoL pour {name}: {e}")
+        return {"rank": "Erreur API", "icon_url": None}
 
 def generate_leaderboard_img(players_data):
     width, row_h = 1000, 70
