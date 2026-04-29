@@ -133,7 +133,7 @@ async def refresh(inter):
     await inter.response.send_message("🔄 Actualisation...", delete_after=3)
     await update_leaderboard()
 
-@tasks.loop(hours=12)
+@tasks.loop(hours=1)
 async def update_leaderboard():
     channel = bot.get_channel(CHANNEL_ID)
     if not channel: return
