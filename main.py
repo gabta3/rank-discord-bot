@@ -69,17 +69,17 @@ QUEUE_LABELS = {
 }
 
 LOL_EMOJIS = {
-    "Iron":        "⬛",
-    "Bronze":      "🟫",
-    "Silver":      "🩶",
-    "Gold":        "🟡",
-    "Platinum":    "🩵",
-    "Emerald":     "🟢",
-    "Diamond":     "🔹",
-    "Master":      "🟣",
-    "Grandmaster": "🔴",
-    "Challenger":  "🔱",
-    "Unranked":    "⬜",
+    "Iron":        "<:lol_iron:1498973388155125850>", 
+    "Bronze":      "<:lol_bronze:1498973454454624427>",
+    "Silver":      "<:lol_silver:1498973522347692053>", 
+    "Gold":        "<:lol_gold:1498973566345940992>",
+    "Platinum":    "<:lol_platinum:1498973633396084816>",
+    "Emerald":     "<:lol_emerald:1498973675972591739>",
+    "Diamond":     "<:lol_diamond:1498973713486315641>",
+    "Master":      "<:lol_master:1498973764455759903>",
+    "Grandmaster": "<:lol_grandmaster:1498973821024342036>",
+    "Challenger":  "<:lol_challenger:1498973859808935978>",
+    "Unranked":    "<:unranked:1498977045928214570> ",
 }
 
 VALO_EMOJIS = {
