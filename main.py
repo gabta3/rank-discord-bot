@@ -98,10 +98,10 @@ VALO_EMOJIS = {
 def unified_pts(tier: str, division: str, lp_or_rr: int) -> int:
     """Calcule les points sur une échelle commune LoL/Valorant."""
     base = UNIFIED_TIER_PTS.get(tier, 0)
-    # Master+ LoL et Immortal/Radiant Valo : pas de division, on ajoute les LP/RR bruts
     if tier in ("Master", "Grandmaster", "Challenger", "Immortal", "Radiant"):
-        return base + min(lp_or_rr, 999)
-    return base + DIVISION_BONUS.get(division, 0) + min(lp_or_rr, 100)
+        return base + lp_or_rr
+    # LP/RR s'ajoutent directement (0-100 normalement, parfois +100 en promo)
+    return base + DIVISION_BONUS.get(division, 0) + lp_or_rr
 
 # Alias pour compatibilité
 def lol_pts(tier: str, division: str, lp: int) -> int:
@@ -348,7 +348,9 @@ async def refresh_leaderboard():
     for p in players:
         name, tag = p["name"], p["tag"]
         v = get_valo_data(name, tag)
+        await asyncio.sleep(1)   # évite le rate limit Henrik (429)
         l = get_lol_data(name, tag)
+        await asyncio.sleep(0.5) # évite le rate limit Riot
         all_data.append({
             "name":      name,
             "v_display": v["display"], "v_pts": v["pts"], "v_emoji": v["emoji"],
@@ -403,12 +405,7 @@ async def on_ready():
     if not HENRIK_TOKEN:
         print("⚠️  HENRIK_TOKEN manquant → Valorant sera Unranked !")
     check_riot_key()
-    # Force la resync des slash commands au démarrage
-    try:
-        await bot.sync_all_application_commands()
-        print("✅ Slash commands synchronisées.")
-    except Exception as e:
-        print(f"⚠️  Sync commands échouée : {e}")
+
     await refresh_leaderboard()
     auto_refresh.start()
 
