@@ -23,6 +23,32 @@ bot = commands.InteractionBot()
 # SYSTEME DE POINTS (pour tri)
 # ─────────────────────────────────────────
 
+# Système de points UNIFIÉ LoL / Valorant
+# Chaque palier vaut 1000 pts, divisions +250/+500/+750
+# Équivalences : Iron=Iron, Bronze=Bronze, Silver=Silver, Gold=Gold,
+#   Platinum=Platinum, Emerald=Diamond, Diamond=Ascendant,
+#   Master=Immortal, Grandmaster/Challenger=Radiant
+
+UNIFIED_TIER_PTS = {
+    # LoL
+    "Iron":        0,
+    "Bronze":      1000,
+    "Silver":      2000,
+    "Gold":        3000,
+    "Platinum":    4000,
+    "Emerald":     5000,
+    "Diamond":     6000,
+    "Master":      7000,
+    "Grandmaster": 7500,
+    "Challenger":  8000,
+    # Valorant (mappé sur l'échelle LoL)
+    # Iron=Iron, Bronze=Bronze, Silver=Silver, Gold=Gold, Platinum=Platinum
+    # Diamond=Emerald, Ascendant=Diamond, Immortal=Master, Radiant=Grandmaster
+    "Ascendant":   6000,
+    "Immortal":    7000,
+    "Radiant":     7500,
+}
+
 LOL_TIERS = [
     "Iron", "Bronze", "Silver", "Gold",
     "Platinum", "Emerald", "Diamond",
@@ -32,7 +58,7 @@ VALO_TIERS = [
     "Iron", "Bronze", "Silver", "Gold", "Platinum",
     "Diamond", "Ascendant", "Immortal", "Radiant"
 ]
-DIVISION_BONUS = {"I": 300, "II": 200, "III": 100, "IV": 0}
+DIVISION_BONUS = {"I": 750, "II": 500, "III": 250, "IV": 0}
 
 QUEUE_LABELS = {
     "RANKED_SOLO_5x5":  "Solo/Duo",
@@ -69,13 +95,20 @@ VALO_EMOJIS = {
     "Unranked":  "⬜",
 }
 
+def unified_pts(tier: str, division: str, lp_or_rr: int) -> int:
+    """Calcule les points sur une échelle commune LoL/Valorant."""
+    base = UNIFIED_TIER_PTS.get(tier, 0)
+    # Master+ LoL et Immortal/Radiant Valo : pas de division, on ajoute les LP/RR bruts
+    if tier in ("Master", "Grandmaster", "Challenger", "Immortal", "Radiant"):
+        return base + min(lp_or_rr, 999)
+    return base + DIVISION_BONUS.get(division, 0) + min(lp_or_rr, 100)
+
+# Alias pour compatibilité
 def lol_pts(tier: str, division: str, lp: int) -> int:
-    base = LOL_TIERS.index(tier) * 400 if tier in LOL_TIERS else 0
-    return base + DIVISION_BONUS.get(division, 0) + lp
+    return unified_pts(tier, division, lp)
 
 def valo_pts(tier: str, division: str, rr: int) -> int:
-    base = VALO_TIERS.index(tier) * 400 if tier in VALO_TIERS else 0
-    return base + DIVISION_BONUS.get(division, 0) + rr
+    return unified_pts(tier, division, rr)
 
 # ─────────────────────────────────────────
 # API RIOT
@@ -224,15 +257,19 @@ MEDALS = ["🥇", "🥈", "🥉"]
 COLORS = {"global": 0xF0A500, "lol": 0x1A78BF, "valo": 0xE8412A}
 
 TITLES = {
-    "global": "🏆  All Rank Leaderboard — Top 10",
+    "global": "🏆  Classement Général — Top 10",
     "lol":    "⚔️  League of Legends — Meilleur Rang",
     "valo":   "🔺  Valorant — Classement",
 }
 
+FOOTER = "🔄 Actualisé toutes les heures  •  dev by htf."
+# Séparateurs invisibles pour élargir les colonnes
+PAD = "   "   # espace demi-cadratin ×3
+
 
 def build_embed(sorted_data: list, mode: str) -> disnake.Embed:
     embed = disnake.Embed(title=TITLES[mode], color=COLORS[mode])
-    embed.set_footer(text="🔄 Refreshed every hour")
+    embed.set_footer(text=FOOTER)
 
     col_players = ""
     col_lol     = ""
@@ -240,24 +277,27 @@ def build_embed(sorted_data: list, mode: str) -> disnake.Embed:
 
     for i, p in enumerate(sorted_data[:10]):
         prefix = MEDALS[i] if i < 3 else f"**{i+1}.**"
-        col_players += f"{prefix} {p['name']}\n"
-        col_lol     += f"{p['l_emoji']}  {p['l_display']}\n"
-        col_valo    += f"{p['v_emoji']}  {p['v_display']}\n"
+        col_players += f"{prefix} {p['name']}
+"
+        col_lol     += f"{p['l_emoji']}  {p['l_display']}{PAD}
+"
+        col_valo    += f"{p['v_emoji']}  {p['v_display']}{PAD}
+"
 
-    SPACER = "\u200b"
+    SPACER = "​"
 
     if mode == "global":
-        embed.add_field(name="Joueurs",           value=col_players or "—", inline=True)
-        embed.add_field(name="\u2694\ufe0f  LoL",   value=col_lol     or "—", inline=True)
-        embed.add_field(name="\U0001f53a  Valorant", value=col_valo    or "—", inline=True)
+        embed.add_field(name=f"Joueurs{PAD}",          value=col_players or "—", inline=True)
+        embed.add_field(name=f"⚔️  LoL{PAD}", value=col_lol    or "—", inline=True)
+        embed.add_field(name="🔺  Valorant",   value=col_valo    or "—", inline=True)
     elif mode == "lol":
-        embed.add_field(name="Joueurs",           value=col_players or "—", inline=True)
-        embed.add_field(name=SPACER,              value=SPACER,              inline=True)
-        embed.add_field(name="\u2694\ufe0f  Rang LoL", value=col_lol  or "—", inline=True)
+        embed.add_field(name=f"Joueurs{PAD}",          value=col_players or "—", inline=True)
+        embed.add_field(name=SPACER,                   value=SPACER,              inline=True)
+        embed.add_field(name="⚔️  Rang LoL", value=col_lol     or "—", inline=True)
     else:
-        embed.add_field(name="Joueurs",           value=col_players or "—", inline=True)
-        embed.add_field(name=SPACER,              value=SPACER,              inline=True)
-        embed.add_field(name="\U0001f53a  Rang Valorant", value=col_valo or "—", inline=True)
+        embed.add_field(name=f"Joueurs{PAD}",          value=col_players or "—", inline=True)
+        embed.add_field(name=SPACER,                   value=SPACER,              inline=True)
+        embed.add_field(name="🔺  Rang Valorant", value=col_valo or "—", inline=True)
 
     return embed
 
