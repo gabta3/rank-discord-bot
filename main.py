@@ -362,6 +362,12 @@ async def on_ready():
     if not HENRIK_TOKEN:
         print("⚠️  HENRIK_TOKEN manquant → Valorant sera Unranked !")
     check_riot_key()
+    # Force la resync des slash commands au démarrage
+    try:
+        await bot.sync_all_application_commands()
+        print("✅ Slash commands synchronisées.")
+    except Exception as e:
+        print(f"⚠️  Sync commands échouée : {e}")
     await refresh_leaderboard()
     auto_refresh.start()
 
