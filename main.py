@@ -1,8 +1,8 @@
 import disnake
 import os
-from disnake.ext import commands
-from pymongo import MongoClient
 import requests
+from disnake.ext import commands, tasks
+from pymongo import MongoClient
 
 # --- CONFIGURATION ---
 MONGO_URL = os.getenv("MONGO_URL")
@@ -16,7 +16,8 @@ players_col = db['players']
 
 bot = commands.InteractionBot()
 
-# --- MAPPING DES POINTS ---
+# --- LOGIQUE DE POINTS (MMR) ---
+# Système de points pour classer les joueurs entre eux
 RANK_POINTS = {
     "Iron": 100, "Bronze": 400, "Silver": 700, "Gold": 1000, 
     "Platinum": 1300, "Emerald": 1600, "Diamond": 1900, 
@@ -24,17 +25,17 @@ RANK_POINTS = {
 }
 
 def calculate_score(rank_str):
+    if not rank_str or "Unranked" in rank_str: return 0
     for tier, pts in RANK_POINTS.items():
         if tier in rank_str:
-            # On ajoute un petit bonus pour les divisions (I, II, III, IV)
             bonus = 0
-            if "I" in rank_str: bonus = 75
-            if "II" in rank_str: bonus = 50
-            if "III" in rank_str: bonus = 25
+            if "I" in rank_str and "II" not in rank_str: bonus = 75
+            elif "II" in rank_str: bonus = 50
+            elif "III" in rank_str: bonus = 25
             return pts + bonus
     return 0
 
-# --- RÉCUPÉRATION DONNÉES ---
+# --- RÉCUPÉRATION DES DONNÉES ---
 
 def get_valo_data(name, tag):
     try:
@@ -59,7 +60,7 @@ def get_lol_data(name, tag):
     except: pass
     return {"rank": "Unranked", "pts": 0}
 
-# --- INTERFACE (BOUTONS) ---
+# --- SYSTÈME DE BOUTONS ---
 
 class LeaderboardView(disnake.ui.View):
     def __init__(self, data):
@@ -68,40 +69,43 @@ class LeaderboardView(disnake.ui.View):
 
     def create_embed(self, sorted_data, title):
         embed = disnake.Embed(title=title, color=0x2b2d31)
-        description = "👤 **Joueur** | 🔴 **Valo** | 🔵 **LoL** | 🏆 **Total**\n"
-        description += "⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯\n"
+        header = "👤 **Joueur** | 🔴 **Valo** | 🔵 **LoL** | 🏆 **Total**\n"
+        header += "⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯\n"
         
+        description = ""
         for i, p in enumerate(sorted_data):
             medal = "🥇" if i == 0 else "🥈" if i == 1 else "🥉" if i == 2 else "🔹"
             description += f"{medal} **{p['name']}** | `{p['v_rank']}` | `{p['l_rank']}` | **{p['total']}**\n"
         
-        embed.description = description
+        embed.description = header + description
+        embed.set_footer(text="Clique sur les boutons pour changer le mode de tri")
         return embed
 
-    @disnake.ui.button(label="Tri : Global", style=disnake.ButtonStyle.grey)
+    @disnake.ui.button(label="Global", emoji="🌍", style=disnake.ButtonStyle.secondary)
     async def sort_global(self, button, inter):
         sorted_data = sorted(self.data, key=lambda x: x['total'], reverse=True)
         await inter.response.edit_message(embed=self.create_embed(sorted_data, "🏆 Classement Général (MMR Combiné)"))
 
-    @disnake.ui.button(label="Tri : Valorant", style=disnake.ButtonStyle.red)
+    @disnake.ui.button(label="Valorant", emoji="🔫", style=disnake.ButtonStyle.danger)
     async def sort_valo(self, button, inter):
         sorted_data = sorted(self.data, key=lambda x: x['v_pts'], reverse=True)
         await inter.response.edit_message(embed=self.create_embed(sorted_data, "🔴 Classement Valorant"))
 
-    @disnake.ui.button(label="Tri : LoL", style=disnake.ButtonStyle.blue)
+    @disnake.ui.button(label="LoL", emoji="⚔️", style=disnake.ButtonStyle.primary)
     async def sort_lol(self, button, inter):
         sorted_data = sorted(self.data, key=lambda x: x['l_pts'], reverse=True)
         await inter.response.edit_message(embed=self.create_embed(sorted_data, "🔵 Classement League of Legends"))
 
-# --- COMMANDES ---
+# --- TÂCHES ET COMMANDES ---
 
 async def refresh_leaderboard():
     channel = bot.get_channel(CHANNEL_ID)
     if not channel: return
 
-    # Nettoyage
-    async for msg in channel.history(limit=10):
-        if msg.author == bot.user: await msg.delete()
+    # Supprimer les anciens messages du bot pour garder le salon propre
+    async for msg in channel.history(limit=5):
+        if msg.author == bot.user:
+            await msg.delete()
 
     players = list(players_col.find())
     all_data = []
@@ -109,27 +113,41 @@ async def refresh_leaderboard():
         v = get_valo_data(p['name'], p['tag'])
         l = get_lol_data(p['name'], p['tag'])
         all_data.append({
-            "name": p['name'], "v_rank": v['rank'], "v_pts": v['pts'],
-            "l_rank": l['rank'], "l_pts": l['pts'], "total": v['pts'] + l['pts']
+            "name": f"{p['name']}#{p['tag']}", 
+            "v_rank": v['rank'], "v_pts": v['pts'],
+            "l_rank": l['rank'], "l_pts": l['pts'], 
+            "total": v['pts'] + l['pts']
         })
 
     if all_data:
-        # Tri par défaut : Global
         all_data.sort(key=lambda x: x['total'], reverse=True)
         view = LeaderboardView(all_data)
         await channel.send(embed=view.create_embed(all_data, "🏆 Classement Général (MMR Combiné)"), view=view)
 
 @bot.event
 async def on_ready():
-    print(f"✅ Bot dynamique prêt : {bot.user}")
+    print(f"✅ Bot prêt : {bot.user}")
     await refresh_leaderboard()
 
-@bot.slash_command(name="add")
+@bot.slash_command(name="add", description="Ajoute un joueur au classement")
 async def add(inter, riot_id: str):
-    if not inter.author.guild_permissions.administrator: return await inter.response.send_message("Admin only", ephemeral=True)
+    if not inter.author.guild_permissions.administrator:
+        return await inter.response.send_message("❌ Admin seulement.", ephemeral=True)
+    
+    if "#" not in riot_id:
+        return await inter.response.send_message("Format: Nom#Tag", ephemeral=True)
+    
     name, tag = riot_id.split("#")
     players_col.update_one({"name": name, "tag": tag}, {"$set": {"name": name, "tag": tag}}, upsert=True)
-    await inter.response.send_message(f"Ajouté : {riot_id}", ephemeral=True)
+    await inter.response.send_message(f"✅ Joueur {riot_id} ajouté !", ephemeral=True)
+    await refresh_leaderboard()
+
+@bot.slash_command(name="del", description="Supprime un joueur")
+async def delete(inter, riot_id: str):
+    if not inter.author.guild_permissions.administrator: return
+    name, tag = riot_id.split("#")
+    players_col.delete_one({"name": name, "tag": tag})
+    await inter.response.send_message(f"🗑️ {riot_id} supprimé.", ephemeral=True)
     await refresh_leaderboard()
 
 bot.run(DISCORD_TOKEN)
