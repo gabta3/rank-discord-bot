@@ -107,7 +107,12 @@ def get_lol_data(name: str, tag: str) -> dict:
             f"https://euw1.api.riotgames.com/lol/league/v4/entries"
             f"/by-summoner/{summoner_id}?api_key={RIOT_TOKEN}"
         )
-        leagues = requests.get(league_url, timeout=8).json()
+        r_league = requests.get(league_url, timeout=8)
+        leagues = r_league.json()
+        # L'API peut renvoyer un dict d'erreur ou une string si la clé est invalide
+        if not isinstance(leagues, list):
+            print(f"[LoL League] Réponse inattendue pour {name}#{tag} → HTTP {r_league.status_code}: {leagues}")
+            return default
     except Exception as e:
         print(f"[LoL League] Exception {name}: {e}")
         return default
@@ -117,6 +122,8 @@ def get_lol_data(name: str, tag: str) -> dict:
     best_prio = 99
 
     for entry in leagues:
+        if not isinstance(entry, dict):
+            continue
         q = entry.get("queueType", "")
         p = priority.get(q, 99)
         if p < best_prio:
