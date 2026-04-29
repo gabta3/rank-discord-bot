@@ -100,6 +100,7 @@ def get_lol_data(name: str, tag: str) -> dict:
     """
     Retourne le MEILLEUR rang LoL tous modes confondus (Solo/Duo, Flex, TFT…)
     trié par points. Affiche le mode : ex. 'Platinum IV 23 LP (TFT)'.
+    Utilise /by-puuid/ directement (accessible avec clé Dev).
     """
     default = {"pts": 0, "display": "Unranked", "emoji": LOL_EMOJIS["Unranked"]}
 
@@ -107,24 +108,11 @@ def get_lol_data(name: str, tag: str) -> dict:
     if not puuid:
         return default
 
+    # endpoint /by-puuid accessible avec clé Dev (contrairement à /by-summoner)
     try:
         r = requests.get(
-            f"https://euw1.api.riotgames.com/lol/summoner/v4/summoners"
-            f"/by-puuid/{puuid}?api_key={RIOT_TOKEN}",
-            timeout=8
-        )
-        if r.status_code != 200:
-            print(f"[LoL Summoner] {name}#{tag} → {r.status_code}: {r.text[:150]}")
-            return default
-        summoner_id = r.json().get("id")
-    except Exception as e:
-        print(f"[LoL Summoner] Exception {name}: {e}")
-        return default
-
-    try:
-        r = requests.get(
-            f"https://euw1.api.riotgames.com/lol/league/v4/entries"
-            f"/by-summoner/{summoner_id}?api_key={RIOT_TOKEN}",
+            f"https://euw1.api.riotgames.com/lol/league/v4/entries/by-puuid/{puuid}"
+            f"?api_key={RIOT_TOKEN}",
             timeout=8
         )
         leagues = r.json()
