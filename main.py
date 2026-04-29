@@ -79,7 +79,7 @@ LOL_EMOJIS = {
     "Master":      "<:lol_master:1498973764455759903>",
     "Grandmaster": "<:lol_grandmaster:1498973821024342036>",
     "Challenger":  "<:lol_challenger:1498973859808935978>",
-    "Unranked":    "<:unranked:1498977045928214570> ",
+    "Unranked":    "<:unranked:1498977045928214570>",
 }
 
 VALO_EMOJIS = {
@@ -92,7 +92,7 @@ VALO_EMOJIS = {
     "Ascendant": "🟩",
     "Immortal":  "🟥",
     "Radiant":   "🌟",
-    "Unranked":  "⬜",
+    "Unranked":  "<:unranked:1498977045928214570>",
 }
 
 def unified_pts(tier: str, division: str, lp_or_rr: int) -> int:
