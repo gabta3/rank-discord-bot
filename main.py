@@ -277,12 +277,9 @@ def build_embed(sorted_data: list, mode: str) -> disnake.Embed:
 
     for i, p in enumerate(sorted_data[:10]):
         prefix = MEDALS[i] if i < 3 else f"**{i+1}.**"
-        col_players += f"{prefix} {p['name']}
-"
-        col_lol     += f"{p['l_emoji']}  {p['l_display']}{PAD}
-"
-        col_valo    += f"{p['v_emoji']}  {p['v_display']}{PAD}
-"
+        col_players += prefix + " " + p['name'] + "\n"
+        col_lol     += p['l_emoji'] + "  " + p['l_display'] + PAD + "\n"
+        col_valo    += p['v_emoji'] + "  " + p['v_display'] + PAD + "\n" 
 
     SPACER = "​"
 
