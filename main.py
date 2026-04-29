@@ -356,6 +356,10 @@ async def refresh_leaderboard():
             "total_pts": v["pts"] + l["pts"],
         })
 
+    # Recalcul du total pour s'assurer que le tri est correct
+    for p in all_data:
+        p["total_pts"] = p["v_pts"] + p["l_pts"]
+
     all_data.sort(key=lambda x: x["total_pts"], reverse=True)
     view  = LeaderboardView(all_data)
     embed = build_embed(all_data, "global")
@@ -409,38 +413,93 @@ async def on_ready():
     auto_refresh.start()
 
 
-@bot.slash_command(name="add", description="Ajouter un joueur (admin)")
+import asyncio
+
+def is_admin(inter: disnake.ApplicationCommandInteraction) -> bool:
+    return inter.author.guild_permissions.administrator
+
+def is_right_channel(inter: disnake.ApplicationCommandInteraction) -> bool:
+    return inter.channel_id == CHANNEL_ID
+
+async def send_temp(inter: disnake.ApplicationCommandInteraction, msg: str, delete_after: int = 5):
+    """Répond en éphémère ET supprime la commande de l'utilisateur après delete_after secondes."""
+    await inter.response.send_message(msg, ephemeral=True)
+    # Tenter de supprimer le message original de la commande slash (pas toujours possible)
+    try:
+        await asyncio.sleep(delete_after)
+        await inter.delete_original_response()
+    except Exception:
+        pass
+
+
+@bot.slash_command(name="add", description="Ajouter un joueur au classement (admin)")
 async def add(inter: disnake.ApplicationCommandInteraction, riot_id: str):
-    if not inter.author.guild_permissions.administrator:
-        return await inter.response.send_message("❌ Réservé aux admins.", ephemeral=True)
+    # Vérif channel
+    if not is_right_channel(inter):
+        return await inter.response.send_message(
+            f"❌ Cette commande n'est utilisable que dans <#{CHANNEL_ID}>.", ephemeral=True
+        )
+    # Vérif admin
+    if not is_admin(inter):
+        return await send_temp(inter, "❌ Réservé aux administrateurs.")
+    # Vérif format
     if "#" not in riot_id:
-        return await inter.response.send_message("❌ Format : `Pseudo#TAG`", ephemeral=True)
+        return await send_temp(inter, "❌ Format invalide. Utilise `Pseudo#TAG`.")
+
     name, tag = riot_id.split("#", 1)
-    players_col.update_one({"name": name, "tag": tag}, {"$set": {"name": name, "tag": tag}}, upsert=True)
-    await inter.response.send_message(f"✅ **{name}#{tag}** ajouté !", ephemeral=True)
+
+    # Vérif que le Riot ID existe vraiment
+    await inter.response.defer(ephemeral=True)
+    puuid = get_puuid(name, tag)
+    if not puuid:
+        return await inter.edit_original_response(
+            content=f"❌ Riot ID **{name}#{tag}** introuvable. Vérifie le pseudo et le tag."
+        )
+
+    players_col.update_one(
+        {"name": name, "tag": tag},
+        {"$set": {"name": name, "tag": tag}},
+        upsert=True
+    )
+    await inter.edit_original_response(content=f"✅ **{name}#{tag}** ajouté au classement !")
+    await asyncio.sleep(5)
+    try:
+        await inter.delete_original_response()
+    except Exception:
+        pass
     await refresh_leaderboard()
 
 
-@bot.slash_command(name="remove", description="Retirer un joueur (admin)")
+@bot.slash_command(name="remove", description="Retirer un joueur du classement (admin)")
 async def remove(inter: disnake.ApplicationCommandInteraction, riot_id: str):
-    if not inter.author.guild_permissions.administrator:
-        return await inter.response.send_message("❌ Réservé aux admins.", ephemeral=True)
+    if not is_right_channel(inter):
+        return await inter.response.send_message(
+            f"❌ Cette commande n'est utilisable que dans <#{CHANNEL_ID}>.", ephemeral=True
+        )
+    if not is_admin(inter):
+        return await send_temp(inter, "❌ Réservé aux administrateurs.")
     if "#" not in riot_id:
-        return await inter.response.send_message("❌ Format : `Pseudo#TAG`", ephemeral=True)
+        return await send_temp(inter, "❌ Format invalide. Utilise `Pseudo#TAG`.")
+
     name, tag = riot_id.split("#", 1)
     res = players_col.delete_one({"name": name, "tag": tag})
+
     if res.deleted_count:
-        await inter.response.send_message(f"🗑️ **{name}#{tag}** retiré.", ephemeral=True)
+        await send_temp(inter, f"🗑️ **{name}#{tag}** retiré du classement.")
         await refresh_leaderboard()
     else:
-        await inter.response.send_message(f"❓ **{name}#{tag}** introuvable.", ephemeral=True)
+        await send_temp(inter, f"❓ **{name}#{tag}** n'est pas dans le classement.")
 
 
-@bot.slash_command(name="refresh", description="Forcer la mise à jour (admin)")
+@bot.slash_command(name="refresh", description="Forcer la mise à jour du classement (admin)")
 async def manual_refresh(inter: disnake.ApplicationCommandInteraction):
-    if not inter.author.guild_permissions.administrator:
-        return await inter.response.send_message("❌ Réservé aux admins.", ephemeral=True)
-    await inter.response.send_message("🔄 Mise à jour en cours...", ephemeral=True)
+    if not is_right_channel(inter):
+        return await inter.response.send_message(
+            f"❌ Cette commande n'est utilisable que dans <#{CHANNEL_ID}>.", ephemeral=True
+        )
+    if not is_admin(inter):
+        return await send_temp(inter, "❌ Réservé aux administrateurs.")
+    await send_temp(inter, "🔄 Mise à jour en cours...", delete_after=3)
     await refresh_leaderboard()
 
 
