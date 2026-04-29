@@ -247,27 +247,26 @@ def build_embed(sorted_data: list, mode: str) -> disnake.Embed:
     embed.set_footer(text="🔄 Refreshed every hour")
 
     col_players = ""
-    col_ranks   = ""
+    col_lol     = ""
+    col_valo    = ""
 
     for i, p in enumerate(sorted_data[:10]):
         prefix = MEDALS[i] if i < 3 else f"**{i+1}.**"
+        col_players += f"{prefix} {p['name']}\n"
+        col_lol     += f"{p['l_emoji']} `{p['l_display']}`\n"
+        col_valo    += f"{p['v_emoji']} `{p['v_display']}`\n"
 
-        if mode == "global":
-            # deux lignes par joueur : Valo puis LoL
-            col_players += f"{prefix} {p['name']}\n\u200b\n"
-            col_ranks   += (
-                f"{p['v_emoji']} `{p['v_display']}`\n"
-                f"{p['l_emoji']} `{p['l_display']}`\n"
-            )
-        elif mode == "valo":
-            col_players += f"{prefix} {p['name']}\n"
-            col_ranks   += f"{p['v_emoji']} `{p['v_display']}`\n"
-        else:
-            col_players += f"{prefix} {p['name']}\n"
-            col_ranks   += f"{p['l_emoji']} `{p['l_display']}`\n"
+    if mode == "global":
+        embed.add_field(name="Joueurs",                   value=col_players or "—", inline=True)
+        embed.add_field(name="⚔️ LoL",                    value=col_lol     or "—", inline=True)
+        embed.add_field(name="🔺 Valorant",               value=col_valo    or "—", inline=True)
+    elif mode == "lol":
+        embed.add_field(name="Joueurs",                   value=col_players or "—", inline=True)
+        embed.add_field(name="⚔️ Rang (Solo/Duo only)",   value=col_lol     or "—", inline=True)
+    else:
+        embed.add_field(name="Joueurs",                   value=col_players or "—", inline=True)
+        embed.add_field(name="🔺 Rang Valorant",          value=col_valo    or "—", inline=True)
 
-    embed.add_field(name="Joueurs", value=col_players or "—", inline=True)
-    embed.add_field(name="Rang",    value=col_ranks   or "—", inline=True)
     return embed
 
 # ─────────────────────────────────────────
