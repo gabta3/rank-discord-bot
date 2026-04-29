@@ -4,208 +4,227 @@ import requests
 from disnake.ext import commands, tasks
 from pymongo import MongoClient
 
-# --- CONFIGURATION ---
-MONGO_URL = os.getenv("MONGO_URL")
-RIOT_TOKEN = os.getenv("RIOT_TOKEN")
-DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-CHANNEL_ID = int(os.getenv("CHANNEL_ID", 0))
+# ─────────────────────────────────────────
+# CONFIGURATION  (variables d'environnement Railway)
+# ─────────────────────────────────────────
+MONGO_URL      = os.getenv("MONGO_URL")
+RIOT_TOKEN     = os.getenv("RIOT_TOKEN")          # Clé Dev Riot (renouveler chaque 24h)
+HENRIK_TOKEN   = os.getenv("HENRIK_TOKEN")        # Clé HenrikDev GRATUITE → https://discord.gg/henrikdev
+DISCORD_TOKEN  = os.getenv("DISCORD_TOKEN")
+CHANNEL_ID     = int(os.getenv("CHANNEL_ID", 0))
 
-client = MongoClient(MONGO_URL)
-db = client['rank_bot']
-players_col = db['players']
+mongo_client = MongoClient(MONGO_URL)
+db           = mongo_client["rank_bot"]
+players_col  = db["players"]
 
 bot = commands.InteractionBot()
 
 # ─────────────────────────────────────────
-# RANK SYSTEM
+# SYSTEME DE POINTS (pour tri)
 # ─────────────────────────────────────────
 
-TIER_ORDER = [
+LOL_TIERS = [
     "Iron", "Bronze", "Silver", "Gold",
     "Platinum", "Emerald", "Diamond",
     "Master", "Grandmaster", "Challenger"
 ]
-
-DIVISION_BONUS = {"I": 300, "II": 200, "III": 100, "IV": 0}
-
-VALO_TIER_ORDER = [
+VALO_TIERS = [
     "Iron", "Bronze", "Silver", "Gold", "Platinum",
     "Diamond", "Ascendant", "Immortal", "Radiant"
 ]
+DIVISION_BONUS = {"I": 300, "II": 200, "III": 100, "IV": 0}
 
-TIER_EMOJIS_LOL = {
-    "Iron": "🩶", "Bronze": "🤎", "Silver": "🩵",
-    "Gold": "🏅", "Platinum": "💠", "Emerald": "💚",
-    "Diamond": "💎", "Master": "👑", "Grandmaster": "🔱", "Challenger": "⚡"
+QUEUE_LABELS = {
+    "RANKED_SOLO_5x5":  "Solo/Duo",
+    "RANKED_FLEX_SR":   "Flex",
+    "RANKED_TFT":       "TFT",
+    "RANKED_TFT_TURBO": "TFT Turbo",
+    "RANKED_TFT_PAIRS": "TFT Duo",
 }
 
-TIER_EMOJIS_VALO = {
-    "Iron": "⬛", "Bronze": "🟤", "Silver": "⬜",
-    "Gold": "🟡", "Platinum": "🔷", "Diamond": "💎",
-    "Ascendant": "🌿", "Immortal": "🔴", "Radiant": "✨"
+LOL_EMOJIS = {
+    "Iron":        "⬛",
+    "Bronze":      "🟫",
+    "Silver":      "🩶",
+    "Gold":        "🟡",
+    "Platinum":    "🩵",
+    "Emerald":     "🟢",
+    "Diamond":     "🔹",
+    "Master":      "🟣",
+    "Grandmaster": "🔴",
+    "Challenger":  "🔱",
+    "Unranked":    "⬜",
 }
 
-def lol_rank_to_pts(tier: str, division: str, lp: int) -> int:
-    base = TIER_ORDER.index(tier) * 400 if tier in TIER_ORDER else 0
-    div_bonus = DIVISION_BONUS.get(division, 0)
-    return base + div_bonus + lp
+VALO_EMOJIS = {
+    "Iron":      "⬛",
+    "Bronze":    "🟫",
+    "Silver":    "🩶",
+    "Gold":      "🟡",
+    "Platinum":  "🟦",
+    "Diamond":   "🔷",
+    "Ascendant": "🟩",
+    "Immortal":  "🟥",
+    "Radiant":   "🌟",
+    "Unranked":  "⬜",
+}
 
-def valo_rank_to_pts(tier: str, division: str, rr: int) -> int:
-    base = VALO_TIER_ORDER.index(tier) * 400 if tier in VALO_TIER_ORDER else 0
-    div_bonus = DIVISION_BONUS.get(division, 0)
-    return base + div_bonus + rr
+def lol_pts(tier: str, division: str, lp: int) -> int:
+    base = LOL_TIERS.index(tier) * 400 if tier in LOL_TIERS else 0
+    return base + DIVISION_BONUS.get(division, 0) + lp
+
+def valo_pts(tier: str, division: str, rr: int) -> int:
+    base = VALO_TIERS.index(tier) * 400 if tier in VALO_TIERS else 0
+    return base + DIVISION_BONUS.get(division, 0) + rr
 
 # ─────────────────────────────────────────
-# API CALLS
+# API RIOT
 # ─────────────────────────────────────────
 
-def get_puuid(name: str, tag: str, region: str = "europe") -> str | None:
-    """Récupère le PUUID via l'API Riot Account v1."""
+def get_puuid(name: str, tag: str) -> str | None:
     url = (
-        f"https://{region}.api.riotgames.com/riot/account/v1/accounts"
+        f"https://europe.api.riotgames.com/riot/account/v1/accounts"
         f"/by-riot-id/{name}/{tag}?api_key={RIOT_TOKEN}"
     )
     try:
         r = requests.get(url, timeout=8)
         if r.status_code == 200:
             return r.json().get("puuid")
-        print(f"[PUUID] {name}#{tag} → HTTP {r.status_code}: {r.text[:120]}")
+        print(f"[PUUID] {name}#{tag} → {r.status_code}: {r.text[:150]}")
     except Exception as e:
-        print(f"[PUUID] Exception pour {name}#{tag}: {e}")
+        print(f"[PUUID] Exception {name}#{tag}: {e}")
     return None
 
 
 def get_lol_data(name: str, tag: str) -> dict:
     """
-    Retourne les données LoL ranked Solo/Duo d'un joueur.
-    Fallback sur Flex si pas de Solo/Duo.
+    Retourne le MEILLEUR rang LoL tous modes confondus (Solo/Duo, Flex, TFT…)
+    trié par points. Affiche le mode : ex. 'Platinum IV 23 LP (TFT)'.
     """
-    default = {"rank": "Unranked", "pts": 0, "display": "Unranked", "emoji": "❓"}
+    default = {"pts": 0, "display": "Unranked", "emoji": LOL_EMOJIS["Unranked"]}
 
-    puuid = get_puuid(name, tag, region="europe")
+    puuid = get_puuid(name, tag)
     if not puuid:
         return default
 
-    # Summoner par PUUID (EUW1)
     try:
-        sum_url = (
+        r = requests.get(
             f"https://euw1.api.riotgames.com/lol/summoner/v4/summoners"
-            f"/by-puuid/{puuid}?api_key={RIOT_TOKEN}"
+            f"/by-puuid/{puuid}?api_key={RIOT_TOKEN}",
+            timeout=8
         )
-        r_sum = requests.get(sum_url, timeout=8)
-        if r_sum.status_code != 200:
-            print(f"[LoL Summoner] {name}#{tag} → HTTP {r_sum.status_code}: {r_sum.text[:120]}")
+        if r.status_code != 200:
+            print(f"[LoL Summoner] {name}#{tag} → {r.status_code}: {r.text[:150]}")
             return default
-        summoner_id = r_sum.json().get("id")
+        summoner_id = r.json().get("id")
     except Exception as e:
         print(f"[LoL Summoner] Exception {name}: {e}")
         return default
 
-    # Entries ranked
     try:
-        league_url = (
+        r = requests.get(
             f"https://euw1.api.riotgames.com/lol/league/v4/entries"
-            f"/by-summoner/{summoner_id}?api_key={RIOT_TOKEN}"
+            f"/by-summoner/{summoner_id}?api_key={RIOT_TOKEN}",
+            timeout=8
         )
-        r_league = requests.get(league_url, timeout=8)
-        leagues = r_league.json()
-        # L'API peut renvoyer un dict d'erreur ou une string si la clé est invalide
+        leagues = r.json()
         if not isinstance(leagues, list):
-            print(f"[LoL League] Réponse inattendue pour {name}#{tag} → HTTP {r_league.status_code}: {leagues}")
+            print(f"[LoL League] {name}#{tag} → {r.status_code}: {leagues}")
             return default
     except Exception as e:
         print(f"[LoL League] Exception {name}: {e}")
         return default
 
-    priority = {"RANKED_SOLO_5x5": 0, "RANKED_FLEX_SR": 1}
-    best = None
-    best_prio = 99
+    best     = None
+    best_pts = -1
 
     for entry in leagues:
         if not isinstance(entry, dict):
             continue
-        q = entry.get("queueType", "")
-        p = priority.get(q, 99)
-        if p < best_prio:
+        t  = entry.get("tier", "").capitalize()
+        d  = entry.get("rank", "IV")
+        lp = entry.get("leaguePoints", 0)
+        if t not in LOL_TIERS:
+            continue
+        p = lol_pts(t, d, lp)
+        if p > best_pts:
+            best_pts = p
             best = entry
-            best_prio = p
 
     if not best:
         return default
 
-    tier = best["tier"].capitalize()
-    division = best["rank"]          # "I", "II", "III", "IV"
-    lp = best.get("leaguePoints", 0)
-    queue_label = "Solo/Duo" if best["queueType"] == "RANKED_SOLO_5x5" else "Flex"
+    tier     = best["tier"].capitalize()
+    division = best["rank"]
+    lp       = best.get("leaguePoints", 0)
+    q_label  = QUEUE_LABELS.get(best.get("queueType", ""), "?")
 
-    # Master+ n'ont pas de division
     if tier in ("Master", "Grandmaster", "Challenger"):
-        display = f"{tier} {lp} LP ({queue_label})"
-        pts = lol_rank_to_pts(tier, "I", lp)
+        display = f"{tier} {lp} LP ({q_label})"
     else:
-        display = f"{tier} {division} {lp} LP ({queue_label})"
-        pts = lol_rank_to_pts(tier, division, lp)
+        display = f"{tier} {division} {lp} LP ({q_label})"
 
-    emoji = TIER_EMOJIS_LOL.get(tier, "🎮")
-    return {"rank": f"{tier} {division}", "pts": pts, "display": display, "emoji": emoji}
+    return {"pts": best_pts, "display": display, "emoji": LOL_EMOJIS.get(tier, "🎮")}
 
 
 def get_valo_data(name: str, tag: str) -> dict:
     """
-    Récupère le rang Valorant via l'API Riot VAL-RANKED v1.
-    Nécessite une clé de production pour VAL ; avec une clé Dev,
-    on tombe en 403 → on fallback sur HenrikDev (sans token).
+    Rang Valorant via HenrikDev API.
+    Token gratuit : rejoindre https://discord.gg/henrikdev → #get-api-key
+    Ajouter HENRIK_TOKEN dans les variables Railway.
     """
-    default = {"rank": "Unranked", "pts": 0, "display": "Unranked", "emoji": "❓"}
+    default = {"pts": 0, "display": "Unranked", "emoji": VALO_EMOJIS["Unranked"]}
 
-    puuid = get_puuid(name, tag, region="europe")
-    if not puuid:
-        return default
+    headers = {}
+    if HENRIK_TOKEN:
+        headers["Authorization"] = HENRIK_TOKEN
 
-    # Tentative API officielle Riot (VAL-RANKED-V1) — EUW
     try:
-        url = (
-            f"https://eu.api.riotgames.com/val/ranked/v1/leaderboards/by-act"
-            # Note : endpoint simplifié, utilise plutôt MMR par PUUID si dispo
+        # Essai v3 d'abord
+        r = requests.get(
+            f"https://api.henrikdev.xyz/valorant/v3/mmr/eu/pc/{name}/{tag}",
+            headers=headers, timeout=8
         )
-        # L'API officielle Valorant ranked par PUUID n'est pas disponible en Dev key.
-        # On part donc directement sur HenrikDev qui est fiable pour les clés Dev.
-    except Exception:
-        pass
-
-    # Fallback HenrikDev (gratuit, pas de token requis)
-    try:
-        henrik_url = f"https://api.henrikdev.xyz/valorant/v1/by-puuid/mmr/eu/{puuid}"
-        r = requests.get(henrik_url, timeout=8)
         if r.status_code == 200:
-            data = r.json().get("data", {})
-            if data:
-                tier_name = data.get("currenttierpatched", "")   # ex: "Diamond 2"
-                rr = data.get("ranking_in_tier", 0)              # RR dans le rang
+            data    = r.json().get("data", {})
+            current = data.get("current", {})
+            tier_name = current.get("tier", {}).get("name", "")
+            rr        = current.get("rr", 0)
+        else:
+            # Fallback v1
+            r2 = requests.get(
+                f"https://api.henrikdev.xyz/valorant/v1/mmr/eu/{name}/{tag}",
+                headers=headers, timeout=8
+            )
+            if r2.status_code != 200:
+                print(f"[Valo] {name}#{tag} → v3:{r.status_code} v1:{r2.status_code}: {r2.text[:150]}")
+                return default
+            d2        = r2.json().get("data", {})
+            tier_name = d2.get("currenttierpatched", "")
+            rr        = d2.get("ranking_in_tier", 0)
 
-                # Séparer tier et division
-                parts = tier_name.split()
-                if len(parts) >= 2:
-                    tier = parts[0].capitalize()
-                    division_map = {"1": "I", "2": "II", "3": "III", "4": "IV"}
-                    division = division_map.get(parts[1], parts[1])
-                else:
-                    tier = tier_name.capitalize()
-                    division = ""
+        parts    = tier_name.split()
+        div_map  = {"1": "I", "2": "II", "3": "III", "4": "IV"}
+        if len(parts) >= 2:
+            tier     = parts[0].capitalize()
+            division = div_map.get(parts[1], parts[1])
+        else:
+            tier     = tier_name.capitalize()
+            division = ""
 
-                if tier in ("Radiant", "Immortal"):
-                    display = f"{tier} {rr} RR"
-                    pts = valo_rank_to_pts(tier, "I", rr)
-                else:
-                    display = f"{tier} {division} {rr} RR"
-                    pts = valo_rank_to_pts(tier, division, rr)
+        if not tier or tier.lower() == "unranked":
+            return default
 
-                emoji = TIER_EMOJIS_VALO.get(tier, "🎯")
-                return {"rank": tier, "pts": pts, "display": display, "emoji": emoji}
-        print(f"[Valo Henrik] {name}#{tag} → HTTP {r.status_code}: {r.text[:120]}")
+        pts = valo_pts(tier, division, rr)
+        if tier in ("Radiant", "Immortal"):
+            display = f"{tier} {rr} RR"
+        else:
+            display = f"{tier} {division} {rr} RR"
+
+        return {"pts": pts, "display": display, "emoji": VALO_EMOJIS.get(tier, "🎯")}
+
     except Exception as e:
-        print(f"[Valo Henrik] Exception {name}: {e}")
-
+        print(f"[Valo] Exception {name}#{tag}: {e}")
     return default
 
 # ─────────────────────────────────────────
@@ -214,39 +233,45 @@ def get_valo_data(name: str, tag: str) -> dict:
 
 MEDALS = ["🥇", "🥈", "🥉"]
 
+COLORS = {"global": 0xF0A500, "lol": 0x1A78BF, "valo": 0xE8412A}
 
-def build_embed(sorted_data: list, title: str, mode: str) -> disnake.Embed:
-    """
-    Construit l'embed leaderboard style image 1.
-    mode : "global" | "lol" | "valo"
-    """
-    color_map = {"global": 0xFFAA00, "lol": 0x3B82F6, "valo": 0xEF4444}
-    embed = disnake.Embed(title=title, color=color_map.get(mode, 0xFFAA00))
-    embed.set_footer(text="🔄 Rafraîchi toutes les heures")
+TITLES = {
+    "global": "🏆  All Rank Leaderboard — Top 10",
+    "lol":    "⚔️  League of Legends — Meilleur Rang",
+    "valo":   "🔺  Valorant — Classement",
+}
+
+
+def build_embed(sorted_data: list, mode: str) -> disnake.Embed:
+    embed = disnake.Embed(title=TITLES[mode], color=COLORS[mode])
+    embed.set_footer(text="🔄 Refreshed every hour")
 
     col_players = ""
-    col_ranks = ""
+    col_ranks   = ""
 
     for i, p in enumerate(sorted_data[:10]):
-        prefix = MEDALS[i] if i < 3 else f"**{i + 1}.**"
-        col_players += f"{prefix} {p['name']}\n"
+        prefix = MEDALS[i] if i < 3 else f"**{i+1}.**"
 
         if mode == "global":
-            col_ranks += (
-                f"{p['v_emoji']} `{p['v_display']}` | "
+            # deux lignes par joueur : Valo puis LoL
+            col_players += f"{prefix} {p['name']}\n\u200b\n"
+            col_ranks   += (
+                f"{p['v_emoji']} `{p['v_display']}`\n"
                 f"{p['l_emoji']} `{p['l_display']}`\n"
             )
         elif mode == "valo":
-            col_ranks += f"{p['v_emoji']} `{p['v_display']}`\n"
-        else:  # lol
-            col_ranks += f"{p['l_emoji']} `{p['l_display']}`\n"
+            col_players += f"{prefix} {p['name']}\n"
+            col_ranks   += f"{p['v_emoji']} `{p['v_display']}`\n"
+        else:
+            col_players += f"{prefix} {p['name']}\n"
+            col_ranks   += f"{p['l_emoji']} `{p['l_display']}`\n"
 
     embed.add_field(name="Joueurs", value=col_players or "—", inline=True)
-    embed.add_field(name="Rang", value=col_ranks or "—", inline=True)
+    embed.add_field(name="Rang",    value=col_ranks   or "—", inline=True)
     return embed
 
 # ─────────────────────────────────────────
-# VIEW (BOUTONS)
+# VIEW — BOUTONS
 # ─────────────────────────────────────────
 
 class LeaderboardView(disnake.ui.View):
@@ -257,26 +282,20 @@ class LeaderboardView(disnake.ui.View):
     @disnake.ui.button(label="Global", emoji="🌍", style=disnake.ButtonStyle.secondary)
     async def btn_global(self, button, inter):
         data = sorted(self.all_data, key=lambda x: x["total_pts"], reverse=True)
-        await inter.response.edit_message(
-            embed=build_embed(data, "🌍 Classement Global", "global")
-        )
+        await inter.response.edit_message(embed=build_embed(data, "global"))
 
-    @disnake.ui.button(label="Valorant", emoji="🔴", style=disnake.ButtonStyle.danger)
+    @disnake.ui.button(label="Valorant", emoji="🔺", style=disnake.ButtonStyle.danger)
     async def btn_valo(self, button, inter):
         data = sorted(self.all_data, key=lambda x: x["v_pts"], reverse=True)
-        await inter.response.edit_message(
-            embed=build_embed(data, "🔴 Classement Valorant", "valo")
-        )
+        await inter.response.edit_message(embed=build_embed(data, "valo"))
 
-    @disnake.ui.button(label="LoL", emoji="🔵", style=disnake.ButtonStyle.primary)
+    @disnake.ui.button(label="League of Legends", emoji="⚔️", style=disnake.ButtonStyle.primary)
     async def btn_lol(self, button, inter):
         data = sorted(self.all_data, key=lambda x: x["l_pts"], reverse=True)
-        await inter.response.edit_message(
-            embed=build_embed(data, "🔵 Classement League of Legends", "lol")
-        )
+        await inter.response.edit_message(embed=build_embed(data, "lol"))
 
 # ─────────────────────────────────────────
-# REFRESH LOGIC
+# REFRESH
 # ─────────────────────────────────────────
 
 async def refresh_leaderboard():
@@ -285,7 +304,6 @@ async def refresh_leaderboard():
         print(f"[Refresh] Channel {CHANNEL_ID} introuvable.")
         return
 
-    # Supprime les anciens messages du bot
     async for msg in channel.history(limit=10):
         if msg.author == bot.user:
             try:
@@ -304,19 +322,19 @@ async def refresh_leaderboard():
         v = get_valo_data(name, tag)
         l = get_lol_data(name, tag)
         all_data.append({
-            "name": name,
+            "name":      name,
             "v_display": v["display"], "v_pts": v["pts"], "v_emoji": v["emoji"],
             "l_display": l["display"], "l_pts": l["pts"], "l_emoji": l["emoji"],
             "total_pts": v["pts"] + l["pts"],
         })
 
     all_data.sort(key=lambda x: x["total_pts"], reverse=True)
-    view = LeaderboardView(all_data)
-    embed = build_embed(all_data, "🌍 Classement Global", "global")
+    view  = LeaderboardView(all_data)
+    embed = build_embed(all_data, "global")
     await channel.send(embed=embed, view=view)
 
 # ─────────────────────────────────────────
-# TÂCHE AUTO (toutes les heures)
+# AUTO-REFRESH
 # ─────────────────────────────────────────
 
 @tasks.loop(hours=1)
@@ -328,74 +346,49 @@ async def before_refresh():
     await bot.wait_until_ready()
 
 # ─────────────────────────────────────────
-# EVENTS & COMMANDES
+# EVENTS & SLASH COMMANDS
 # ─────────────────────────────────────────
 
 @bot.event
 async def on_ready():
     print(f"✅ Bot connecté : {bot.user}")
+    if not HENRIK_TOKEN:
+        print("⚠️  HENRIK_TOKEN manquant → Valorant sera Unranked !")
     await refresh_leaderboard()
     auto_refresh.start()
 
 
-@bot.slash_command(name="add", description="Ajouter un joueur au leaderboard")
+@bot.slash_command(name="add", description="Ajouter un joueur (admin)")
 async def add(inter: disnake.ApplicationCommandInteraction, riot_id: str):
-    """Ajoute un joueur. Format : Pseudo#TAG"""
     if not inter.author.guild_permissions.administrator:
-        await inter.response.send_message(
-            "❌ Réservé aux admins.", ephemeral=True
-        )
-        return
-
+        return await inter.response.send_message("❌ Réservé aux admins.", ephemeral=True)
     if "#" not in riot_id:
-        await inter.response.send_message(
-            "❌ Format invalide. Utilise `Pseudo#TAG`.", ephemeral=True
-        )
-        return
-
+        return await inter.response.send_message("❌ Format : `Pseudo#TAG`", ephemeral=True)
     name, tag = riot_id.split("#", 1)
-    players_col.update_one(
-        {"name": name, "tag": tag},
-        {"$set": {"name": name, "tag": tag}},
-        upsert=True
-    )
-    await inter.response.send_message(
-        f"✅ **{name}#{tag}** ajouté ! Mise à jour du leaderboard...", ephemeral=True
-    )
+    players_col.update_one({"name": name, "tag": tag}, {"$set": {"name": name, "tag": tag}}, upsert=True)
+    await inter.response.send_message(f"✅ **{name}#{tag}** ajouté !", ephemeral=True)
     await refresh_leaderboard()
 
 
-@bot.slash_command(name="remove", description="Retirer un joueur du leaderboard")
+@bot.slash_command(name="remove", description="Retirer un joueur (admin)")
 async def remove(inter: disnake.ApplicationCommandInteraction, riot_id: str):
-    """Retire un joueur. Format : Pseudo#TAG"""
     if not inter.author.guild_permissions.administrator:
-        await inter.response.send_message("❌ Réservé aux admins.", ephemeral=True)
-        return
-
+        return await inter.response.send_message("❌ Réservé aux admins.", ephemeral=True)
     if "#" not in riot_id:
-        await inter.response.send_message(
-            "❌ Format invalide. Utilise `Pseudo#TAG`.", ephemeral=True
-        )
-        return
-
+        return await inter.response.send_message("❌ Format : `Pseudo#TAG`", ephemeral=True)
     name, tag = riot_id.split("#", 1)
-    result = players_col.delete_one({"name": name, "tag": tag})
-    if result.deleted_count:
-        await inter.response.send_message(
-            f"🗑️ **{name}#{tag}** retiré.", ephemeral=True
-        )
+    res = players_col.delete_one({"name": name, "tag": tag})
+    if res.deleted_count:
+        await inter.response.send_message(f"🗑️ **{name}#{tag}** retiré.", ephemeral=True)
         await refresh_leaderboard()
     else:
-        await inter.response.send_message(
-            f"❓ **{name}#{tag}** introuvable en base.", ephemeral=True
-        )
+        await inter.response.send_message(f"❓ **{name}#{tag}** introuvable.", ephemeral=True)
 
 
-@bot.slash_command(name="refresh", description="Forcer la mise à jour du leaderboard")
+@bot.slash_command(name="refresh", description="Forcer la mise à jour (admin)")
 async def manual_refresh(inter: disnake.ApplicationCommandInteraction):
     if not inter.author.guild_permissions.administrator:
-        await inter.response.send_message("❌ Réservé aux admins.", ephemeral=True)
-        return
+        return await inter.response.send_message("❌ Réservé aux admins.", ephemeral=True)
     await inter.response.send_message("🔄 Mise à jour en cours...", ephemeral=True)
     await refresh_leaderboard()
 
