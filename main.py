@@ -73,7 +73,7 @@ LOL_EMOJIS = {
     "Bronze":      "<:lol_bronze:1498973454454624427>",
     "Silver":      "<:lol_silver:1498973522347692053>", 
     "Gold":        "<:lol_gold:1498973566345940992>",
-    "Platinum":    "<:lol_platinum:1498973633396084816>",
+    "Platinum":    "<:lol_platinum:1498978094776717312>",
     "Emerald":     "<:lol_emerald:1498973675972591739>",
     "Diamond":     "<:lol_diamond:1498973713486315641>",
     "Master":      "<:lol_master:1498973764455759903>",
@@ -258,8 +258,8 @@ COLORS = {"global": 0xF0A500, "lol": 0x1A78BF, "valo": 0xE8412A}
 
 TITLES = {
     "global": "🏆  Classement Général — Top 10",
-    "lol":    "⚔️  League of Legends — Meilleur Rang",
-    "valo":   "🔺  Valorant — Classement",
+    "lol":    "<:lol_logo:1209157366809886811>   League of Legends — Meilleur Rang",
+    "valo":   "<:valo_logo:1209157284035428362>   Valorant — Classement",
 }
 
 FOOTER = "🔄 Actualisé toutes les heures  •  dev by htf."
@@ -312,12 +312,12 @@ class LeaderboardView(disnake.ui.View):
         data = sorted(self.all_data, key=lambda x: x["total_pts"], reverse=True)
         await inter.response.edit_message(embed=build_embed(data, "global"))
 
-    @disnake.ui.button(label="Valorant", emoji="🔺", style=disnake.ButtonStyle.danger)
+    @disnake.ui.button(label="Valorant", emoji="<:valo_logo:1209157284035428362>", style=disnake.ButtonStyle.danger)
     async def btn_valo(self, button, inter):
         data = sorted(self.all_data, key=lambda x: x["v_pts"], reverse=True)
         await inter.response.edit_message(embed=build_embed(data, "valo"))
 
-    @disnake.ui.button(label="League of Legends", emoji="⚔️", style=disnake.ButtonStyle.primary)
+    @disnake.ui.button(label="League of Legends", emoji="<:lol_logo:1209157366809886811>", style=disnake.ButtonStyle.primary)
     async def btn_lol(self, button, inter):
         data = sorted(self.all_data, key=lambda x: x["l_pts"], reverse=True)
         await inter.response.edit_message(embed=build_embed(data, "lol"))
