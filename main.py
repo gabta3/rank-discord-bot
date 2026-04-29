@@ -285,16 +285,16 @@ def build_embed(sorted_data: list, mode: str) -> disnake.Embed:
 
     if mode == "global":
         embed.add_field(name=f"Joueurs{PAD}",          value=col_players or "—", inline=True)
-        embed.add_field(name=f"⚔️  LoL{PAD}", value=col_lol    or "—", inline=True)
-        embed.add_field(name="🔺  Valorant",   value=col_valo    or "—", inline=True)
+        embed.add_field(name=f"<:lol_logo:1209157366809886811>  LoL{PAD}", value=col_lol    or "—", inline=True)
+        embed.add_field(name="<:valo_logo:1209157284035428362>  Valorant",   value=col_valo    or "—", inline=True)
     elif mode == "lol":
         embed.add_field(name=f"Joueurs{PAD}",          value=col_players or "—", inline=True)
         embed.add_field(name=SPACER,                   value=SPACER,              inline=True)
-        embed.add_field(name="⚔️  Rang LoL", value=col_lol     or "—", inline=True)
+        embed.add_field(name="<:lol_logo:1209157366809886811>  Rang LoL", value=col_lol     or "—", inline=True)
     else:
         embed.add_field(name=f"Joueurs{PAD}",          value=col_players or "—", inline=True)
         embed.add_field(name=SPACER,                   value=SPACER,              inline=True)
-        embed.add_field(name="🔺  Rang Valorant", value=col_valo or "—", inline=True)
+        embed.add_field(name="<:valo_logo:1209157284035428362>  Rang Valorant", value=col_valo or "—", inline=True)
 
     return embed
 
