@@ -41,12 +41,21 @@ UNIFIED_TIER_PTS = {
     "Master":      7000,
     "Grandmaster": 7500,
     "Challenger":  8000,
-    # Valorant (mappé sur l'échelle LoL)
-    # Iron=Iron, Bronze=Bronze, Silver=Silver, Gold=Gold, Platinum=Platinum
-    # Diamond=Emerald, Ascendant=Diamond, Immortal=Master, Radiant=Grandmaster
-    "Ascendant":   6000,
-    "Immortal":    7000,
-    "Radiant":     7500,
+    # Valorant — préfixés "v_" pour éviter collision avec LoL
+    # Iron=Iron, Bronze=Bronze, Silver=Silver, Gold=Gold, Platinum=Platinum (identiques)
+    # Diamond Valo = Emerald LoL (5000)
+    # Ascendant    = Diamond LoL (6000)
+    # Immortal     = Master  LoL (7000)
+    # Radiant      = Grandmaster (7500)
+    "v_Iron":        0,
+    "v_Bronze":      1000,
+    "v_Silver":      2000,
+    "v_Gold":        3000,
+    "v_Platinum":    4000,
+    "v_Diamond":     5000,
+    "v_Ascendant":   6000,
+    "v_Immortal":    7000,
+    "v_Radiant":     7500,
 }
 
 LOL_TIERS = [
@@ -58,7 +67,8 @@ VALO_TIERS = [
     "Iron", "Bronze", "Silver", "Gold", "Platinum",
     "Diamond", "Ascendant", "Immortal", "Radiant"
 ]
-DIVISION_BONUS = {"I": 750, "II": 500, "III": 250, "IV": 0}
+DIVISION_BONUS     = {"I": 750, "II": 500, "III": 250, "IV": 0}  # LoL : I est le plus haut
+DIVISION_BONUS_VALO = {"1": 0,   "2": 250,  "3": 500}               # Valo : 3 est le plus haut
 
 QUEUE_LABELS = {
     "RANKED_SOLO_5x5":  "Solo/Duo",
@@ -69,17 +79,17 @@ QUEUE_LABELS = {
 }
 
 LOL_EMOJIS = {
-    "Iron":        "<:lol_iron:1498973388155125850>", 
-    "Bronze":      "<:lol_bronze:1498973454454624427>",
-    "Silver":      "<:lol_silver:1498973522347692053>", 
-    "Gold":        "<:lol_gold:1498973566345940992>",
-    "Platinum":    "<:lol_platinum:1498978094776717312>",
-    "Emerald":     "<:lol_emerald:1498973675972591739>",
-    "Diamond":     "<:lol_diamond:1498973713486315641>",
-    "Master":      "<:lol_master:1498973764455759903>",
-    "Grandmaster": "<:lol_grandmaster:1498973821024342036>",
-    "Challenger":  "<:lol_challenger:1498973859808935978>",
-    "Unranked":    "<:unranked:1498977045928214570>",
+    "Iron":        "⬛",
+    "Bronze":      "🟫",
+    "Silver":      "🩶",
+    "Gold":        "🟡",
+    "Platinum":    "🩵",
+    "Emerald":     "🟢",
+    "Diamond":     "🔹",
+    "Master":      "🟣",
+    "Grandmaster": "🔴",
+    "Challenger":  "🔱",
+    "Unranked":    "⬜",
 }
 
 VALO_EMOJIS = {
@@ -92,7 +102,7 @@ VALO_EMOJIS = {
     "Ascendant": "🟩",
     "Immortal":  "🟥",
     "Radiant":   "🌟",
-    "Unranked":  "<:unranked:1498977045928214570>",
+    "Unranked":  "⬜",
 }
 
 def unified_pts(tier: str, division: str, lp_or_rr: int) -> int:
@@ -108,7 +118,14 @@ def lol_pts(tier: str, division: str, lp: int) -> int:
     return unified_pts(tier, division, lp)
 
 def valo_pts(tier: str, division: str, rr: int) -> int:
-    return unified_pts(tier, division, rr)
+    """Calcule les points Valorant avec l'échelle unifiée.
+    Division Valo : '1' = plus bas, '3' = plus haut (inverse de LoL).
+    """
+    v_tier = "v_" + tier
+    base = UNIFIED_TIER_PTS.get(v_tier, UNIFIED_TIER_PTS.get(tier, 0))
+    if tier in ("Immortal", "Radiant"):
+        return base + rr
+    return base + DIVISION_BONUS_VALO.get(division, 0) + rr
 
 # ─────────────────────────────────────────
 # API RIOT
@@ -224,11 +241,10 @@ def get_valo_data(name: str, tag: str) -> dict:
             tier_name = d2.get("currenttierpatched", "")
             rr        = d2.get("ranking_in_tier", 0)
 
-        parts    = tier_name.split()
-        div_map  = {"1": "I", "2": "II", "3": "III", "4": "IV"}
+        parts = tier_name.split()
         if len(parts) >= 2:
             tier     = parts[0].capitalize()
-            division = div_map.get(parts[1], parts[1])
+            division = parts[1]   # garder "1"/"2"/"3" pour valo_pts (3 = plus haut)
         else:
             tier     = tier_name.capitalize()
             division = ""
@@ -258,8 +274,8 @@ COLORS = {"global": 0xF0A500, "lol": 0x1A78BF, "valo": 0xE8412A}
 
 TITLES = {
     "global": "🏆  Classement Général — Top 10",
-    "lol":    "<:lol_logo:1209157366809886811>   League of Legends — Meilleur Rang",
-    "valo":   "<:valo_logo:1209157284035428362>   Valorant — Classement",
+    "lol":    "⚔️  League of Legends — Meilleur Rang",
+    "valo":   "🔺  Valorant — Classement",
 }
 
 FOOTER = "🔄 Actualisé toutes les heures  •  dev by htf."
@@ -285,16 +301,16 @@ def build_embed(sorted_data: list, mode: str) -> disnake.Embed:
 
     if mode == "global":
         embed.add_field(name=f"Joueurs{PAD}",          value=col_players or "—", inline=True)
-        embed.add_field(name=f"<:lol_logo:1209157366809886811>  LoL{PAD}", value=col_lol    or "—", inline=True)
-        embed.add_field(name="<:valo_logo:1209157284035428362>  Valorant",   value=col_valo    or "—", inline=True)
+        embed.add_field(name=f"⚔️  LoL{PAD}", value=col_lol    or "—", inline=True)
+        embed.add_field(name="🔺  Valorant",   value=col_valo    or "—", inline=True)
     elif mode == "lol":
         embed.add_field(name=f"Joueurs{PAD}",          value=col_players or "—", inline=True)
         embed.add_field(name=SPACER,                   value=SPACER,              inline=True)
-        embed.add_field(name="<:lol_logo:1209157366809886811>  Rang LoL", value=col_lol     or "—", inline=True)
+        embed.add_field(name="⚔️  Rang LoL", value=col_lol     or "—", inline=True)
     else:
         embed.add_field(name=f"Joueurs{PAD}",          value=col_players or "—", inline=True)
         embed.add_field(name=SPACER,                   value=SPACER,              inline=True)
-        embed.add_field(name="<:valo_logo:1209157284035428362>  Rang Valorant", value=col_valo or "—", inline=True)
+        embed.add_field(name="🔺  Rang Valorant", value=col_valo or "—", inline=True)
 
     return embed
 
@@ -312,12 +328,12 @@ class LeaderboardView(disnake.ui.View):
         data = sorted(self.all_data, key=lambda x: x["total_pts"], reverse=True)
         await inter.response.edit_message(embed=build_embed(data, "global"))
 
-    @disnake.ui.button(label="Valorant", emoji="<:valo_logo:1209157284035428362>", style=disnake.ButtonStyle.danger)
+    @disnake.ui.button(label="Valorant", emoji="🔺", style=disnake.ButtonStyle.danger)
     async def btn_valo(self, button, inter):
         data = sorted(self.all_data, key=lambda x: x["v_pts"], reverse=True)
         await inter.response.edit_message(embed=build_embed(data, "valo"))
 
-    @disnake.ui.button(label="League of Legends", emoji="<:lol_logo:1209157366809886811>", style=disnake.ButtonStyle.primary)
+    @disnake.ui.button(label="League of Legends", emoji="⚔️", style=disnake.ButtonStyle.primary)
     async def btn_lol(self, button, inter):
         data = sorted(self.all_data, key=lambda x: x["l_pts"], reverse=True)
         await inter.response.edit_message(embed=build_embed(data, "lol"))
