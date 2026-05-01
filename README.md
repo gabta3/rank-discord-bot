@@ -108,4 +108,4 @@ MIT — Libre d'utilisation et de modification.
 
 ---
 
-<p align="center">Développé par <strong>htf.</strong> 🎮</p>
+<p align="center">Développé par <strong>Gabriel</strong> 🎮</p>
